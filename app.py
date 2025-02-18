@@ -1,118 +1,155 @@
 import streamlit as st
-import openai
+import google.generativeai as genai
 from textblob import TextBlob
-import pandas as pd
+import time
 
-# Change it to your open ai api key
-openai.api_key = 'your_openai_api_key'
+# Configure Gemini API
+GOOGLE_API_KEY = 'AIzaSyCh8tGbmK96jHphvqL1KZ1bVv2hPR3pFck'
+genai.configure(api_key=GOOGLE_API_KEY)
 
+# Custom CSS for better styling
+st.markdown("""
+    <style>
+    .chat-container {
+        border-radius: 10px;
+        padding: 10px;
+        margin: 10px 0;
+    }
+    .user-message {
+        background-color: #2e7bf3;
+        color: white;
+        text-align: right;
+        padding: 15px;
+        border-radius: 15px 15px 0 15px;
+        margin: 5px 0;
+        max-width: 80%;
+        margin-left: auto;
+    }
+    .bot-message {
+        background-color: #383838;
+        color: white;
+        text-align: left;
+        padding: 15px;
+        border-radius: 15px 15px 15px 0;
+        margin: 5px 0;
+        max-width: 80%;
+        margin-right: auto;
+    }
+    .stTextInput>div>div>input {
+        border-radius: 20px;
+        background-color: #2b2b2b;
+        color: white;
+        border: 1px solid #4e4e4e;
+    }
+    .stButton>button {
+        border-radius: 20px;
+        width: 100%;
+        background-color: #2e7bf3;
+        color: white;
+    }
+    /* Dark theme adjustments */
+    .stApp {
+        background-color: #1a1a1a;
+        color: white;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-# Function to generate a response from GPT-3
+# Initialize session state
+if 'messages' not in st.session_state:
+    st.session_state['messages'] = []
+
 def generate_response(prompt):
     try:
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt}
-            ]
+        model = genai.GenerativeModel('gemini-pro')
+        response = model.generate_content(
+            f"As a mental health support assistant: {prompt}"
         )
-        return response.choices[0].message['content'].strip()
-    except openai.RateLimitError:
-        return "It seems we have reached the API quota limit. Please try again later or check your OpenAI account."
+        return response.text.strip()
+    except Exception as e:
+        return f"An error occurred: {str(e)}. Please make sure you have set up your Gemini API key correctly."
 
-
-# Analyze sentiment
 def analyze_sentiment(text):
     analysis = TextBlob(text)
     polarity = analysis.sentiment.polarity
     if polarity > 0.5:
-        return "Very Positive", polarity
+        return "Very Positive", "😊"
     elif 0.1 < polarity <= 0.5:
-        return "Positive", polarity
+        return "Positive", "🙂"
     elif -0.1 <= polarity <= 0.1:
-        return "Neutral", polarity
+        return "Neutral", "😐"
     elif -0.5 < polarity < -0.1:
-        return "Negative", polarity
+        return "Negative", "😔"
     else:
-        return "Very Negative", polarity
+        return "Very Negative", "😢"
 
+# Main UI
+st.title("🌟 Mental Health Support Assistant")
+st.markdown("##### I'm here to listen and support you. How are you feeling today?")
 
-# Provide coping strategies
-def provide_coping_strategy(sentiment):
-    strategies = {
-        "Very Positive": "Keep up the positive vibes! Consider sharing your good mood with others.",
-        "Positive": "It's great to see you're feeling positive. Keep doing what you're doing!",
-        "Neutral": "Feeling neutral is okay. Consider engaging in activities you enjoy.",
-        "Negative": "It seems you're feeling down. Try to take a break and do something relaxing.",
-        "Very Negative": "I'm sorry to hear that you're feeling very negative. Consider talking to a friend or seeking professional help."
-    }
-    return strategies.get(sentiment, "Keep going, you're doing great!")
+# Chat interface
+with st.container():
+    for message in st.session_state['messages']:
+        if message['role'] == 'user':
+            st.markdown(
+                f"""<div class="user-message">{message["content"]}</div>""", 
+                unsafe_allow_html=True
+            )
+        else:
+            st.markdown(
+                f"""<div class="bot-message">{message["content"]}</div>""", 
+                unsafe_allow_html=True
+            )
 
-
-# Disclaimer regarding data privacy
-def display_disclaimer():
-    st.sidebar.markdown(
-        "<h2 style='color: #FF5733;'>Data Privacy Disclaimer</h2>",
-        unsafe_allow_html=True
-    )
-    st.sidebar.markdown(
-        "<span style='color: #FF5733;'>This application stores your session data, including your messages and "
-        "sentiment analysis results, in temporary storage during your session. "
-        "This data is not stored permanently and is used solely to improve your interaction with the chatbot. "
-        "Please avoid sharing personal or sensitive information during your conversation.</span>",
-        unsafe_allow_html=True
-    )
-
-st.title("Mental Health Support Chatbot")
-
-if 'messages' not in st.session_state:
-    st.session_state['messages'] = []
-if 'mood_tracker' not in st.session_state:
-    st.session_state['mood_tracker'] = []
-
-with st.form(key='chat_form'):
-    user_message = st.text_input("You:")
-    submit_button = st.form_submit_button(label='Send')
+# Input form
+with st.form(key='chat_form', clear_on_submit=True):
+    user_message = st.text_input("Share your thoughts...", key="user_input")
+    col1, col2 = st.columns([4, 1])
+    with col2:
+        submit_button = st.form_submit_button("Send 📤")
 
 if submit_button and user_message:
-    st.session_state['messages'].append(("You", user_message))
+    # Add user message to chat
+    st.session_state['messages'].append({"role": "user", "content": user_message})
 
-    sentiment, polarity = analyze_sentiment(user_message)
-    coping_strategy = provide_coping_strategy(sentiment)
+    # Show typing animation
+    with st.spinner("Thinking... 💭"):
+        # Analyze sentiment
+        sentiment, emoji = analyze_sentiment(user_message)
+        
+        # Generate response
+        response = generate_response(user_message)
+        
+        # Add bot response to chat
+        st.session_state['messages'].append({"role": "assistant", "content": f"{response} {emoji}"})
+    
+    # Rerun to update the chat display
+    st.rerun()
 
-    response = generate_response(user_message)
+# Sidebar with resources
+with st.sidebar:
+    st.markdown("### 🆘 Emergency Resources")
+    st.markdown("""
+    If you need immediate help:
+    
+    🚨 **National Crisis Hotline**
+    - Call: 988
+    - Text: HOME to 741741
+    
+    🌍 **International Resources**
+    - [Find Help Near You](https://www.iasp.info/resources/Crisis_Centres/)
+    
+    💡 **Self-Care Tips**
+    - Take deep breaths
+    - Practice mindfulness
+    - Stay hydrated
+    - Connect with loved ones
+    - Get enough rest
+    """)
 
-    st.session_state['messages'].append(("Bot", response))
-    st.session_state['mood_tracker'].append((user_message, sentiment, polarity))
-
-for sender, message in st.session_state['messages']:
-    if sender == "You":
-        st.text(f"You: {message}")
-    else:
-        st.text(f"Bot: {message}")
-
-# Display mood tracking chart
-if st.session_state['mood_tracker']:
-    mood_data = pd.DataFrame(st.session_state['mood_tracker'], columns=["Message", "Sentiment", "Polarity"])
-    st.line_chart(mood_data['Polarity'])
-
-# Display coping strategies
-if user_message:
-    st.write(f"Suggested Coping Strategy: {coping_strategy}")
-
-# Display resources
-st.sidebar.title("Resources")
-st.sidebar.write("If you need immediate help, please contact one of the following resources:")
-st.sidebar.write("1. National Suicide Prevention Lifeline: 1-800-273-8255")
-st.sidebar.write("2. Crisis Text Line: Text 'HELLO' to 741741")
-st.sidebar.write("[More Resources](https://www.mentalhealth.gov/get-help/immediate-help)")
-
-# Display session summary
-if st.sidebar.button("Show Session Summary"):
-    st.sidebar.write("### Session Summary")
-    for i, (message, sentiment, polarity) in enumerate(st.session_state['mood_tracker']):
-        st.sidebar.write(f"{i + 1}. {message} - Sentiment: {sentiment} (Polarity: {polarity})")
-
-
-display_disclaimer()
+    # Professional disclaimer
+    st.markdown("---")
+    st.markdown("""
+    <small>⚠️ **Disclaimer**: This is an AI assistant and not a replacement for professional mental health care. 
+    If you're experiencing a serious mental health crisis, please contact a qualified mental health professional.</small>
+    """, unsafe_allow_html=True)
